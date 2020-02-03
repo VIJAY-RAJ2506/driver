@@ -197,8 +197,7 @@ static struct usb_driver m_driver = {
 
 static int __init init_func(void) {
 	
-	if(usb_register(&m_driver) == -1)
-	{
+	if(usb_register(&m_driver) == -1) {
 		printk(KERN_ERR "usb_register failed \n");
 		return -1;
 	}
