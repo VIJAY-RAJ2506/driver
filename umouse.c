@@ -12,14 +12,6 @@ MODULE_AUTHOR("VIJAY<mvr250697@gmail.com>");
 MODULE_LICENSE("GPL");
 MODULE_DESCRIPTION("USB mouse driver for Dell Optical mouse");
 
-#ifndef VENDOR_ID
-#define VENDOR_ID 0x413c
-#endif
-
-#ifndef PRODUCT_ID 
-#define PRODUCT_ID 0x301a
-#endif
-
 #ifndef DEV_NAME
 #define DEV_NAME "Mouse_driver"
 #endif
@@ -62,15 +54,29 @@ static void mouse_close(struct input_dev *idev) {
 }
 
 void mouse_data(struct urb *urb) {
-	
+
+	int stat;	
 	struct mouse *mdev=urb->context;
+	if(!mdev)
+		printk(KERN_INFO "%s : mdev allocation failed \n",__func__);
+	
 	struct input_dev *idev=mdev->idev;
 	signed char *data= mdev->data;
 
-	if (urb->status && !(urb->status == -ENOENT || urb->status == -ECONNRESET || urb->status == -ESHUTDOWN)) {
-		
-		printk(KERN_INFO "urb status received :%d \n",urb->status);
+	switch(urb->status) {
+	
+		case 0:
+			break;
+		case -ECONNRESET:
+		case -ENOENT:
+		case -ESHUTDOWN:
+			return;
+		default:
+			goto resubmit;
+
 	}
+	
+
 	
 	input_report_key(idev,BTN_LEFT,data[0] & 0x01);
 	input_report_key(idev,BTN_RIGHT,data[0] & 0x02);
@@ -81,6 +87,11 @@ void mouse_data(struct urb *urb) {
 	input_report_rel(idev,REL_WHEEL,data[3]);
 
 	input_sync(idev);
+
+resubmit:
+		stat=usb_submit_urb(urb,GFP_ATOMIC);
+		if(stat) 
+			printk(KERN_ERR "urb submission failed \n");
 
 }
 
@@ -143,9 +154,16 @@ int mouse_usb_probe(struct usb_interface *interface, const struct usb_device_id 
 	idev=mdev->idev;
 
 	idev->name=DEV_NAME;
+	if (!strlen(mdev->name))
+		snprintf(mdev->name, sizeof(mdev->name),
+			 "USB HIDBP Mouse %04x:%04x",
+			 le16_to_cpu(mdev->device->descriptor.idVendor),
+			 le16_to_cpu(mdev->device->descriptor.idProduct));
+
+
+
 	usb_make_path(mdev->device,mdev->phy,sizeof(mdev->phy));
 	strlcat(mdev->phy,"/input0",sizeof(mdev->phy));
-//	idev->phys="/home/vijay/driver/mouse/data"; //desired physical path
 	usb_to_input_id(mdev->device,&idev->id);	
 	idev->dev.parent=&interface->dev;
 	
@@ -155,23 +173,18 @@ int mouse_usb_probe(struct usb_interface *interface, const struct usb_device_id 
 	idev->relbit[0] |= BIT_MASK(REL_WHEEL);
 
 	input_set_drvdata(idev,mdev);
-
 	idev->open=mouse_open;
 	idev->close=mouse_close;
-
-	usb_set_intfdata(interface,(void*)mdev);
 	
-	printk(KERN_INFO "INTERVAL VAUE : %d \n",mdev->endpoint->bInterval);
-
+	usb_set_intfdata(interface,(void*)mdev);
 	usb_fill_int_urb(mdev->urb,mdev->device,pipe,mdev->data,(maxp > 8?8 : maxp),mouse_data,mdev,mdev->endpoint->bInterval);
-		
 	mdev->urb->transfer_dma=mdev->data_dma;
 	mdev->urb->transfer_flags |= URB_NO_TRANSFER_DMA_MAP;
 
 	if(input_register_device(mdev->idev)) {
 		usb_free_urb(mdev->urb);
 	}
-
+	usb_set_intfdata(interface, mdev);
 	return 0;
 }
 
@@ -197,7 +210,8 @@ static struct usb_driver m_driver = {
 
 static int __init init_func(void) {
 	
-	if(usb_register(&m_driver) == -1) {
+	if(usb_register(&m_driver) == -1)
+	{
 		printk(KERN_ERR "usb_register failed \n");
 		return -1;
 	}
