@@ -154,14 +154,6 @@ int mouse_usb_probe(struct usb_interface *interface, const struct usb_device_id 
 	idev=mdev->idev;
 
 	idev->name=DEV_NAME;
-	if (!strlen(mdev->name))
-		snprintf(mdev->name, sizeof(mdev->name),
-			 "USB HIDBP Mouse %04x:%04x",
-			 le16_to_cpu(mdev->device->descriptor.idVendor),
-			 le16_to_cpu(mdev->device->descriptor.idProduct));
-
-
-
 	usb_make_path(mdev->device,mdev->phy,sizeof(mdev->phy));
 	strlcat(mdev->phy,"/input0",sizeof(mdev->phy));
 	usb_to_input_id(mdev->device,&idev->id);	
